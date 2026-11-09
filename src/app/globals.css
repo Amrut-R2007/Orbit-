@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FFFAF0;
+  --foreground: #2F2F2F;
+  --card: #FFFDF9;
+  --card-foreground: #2F2F2F;
+  --surface: #FFFFFF;
+  --border: #E8DCCB;
+  --input: #E4D8C5;
+  --primary: #F4A261;
+  --primary-foreground: #FFFFFF;
+  --secondary: #FFE2CC;
+  --secondary-foreground: #2F2F2F;
+  --muted: #F3EAE0;
+  --muted-foreground: #7D7366;
+  --accent: #F4A261;
+  --accent-foreground: #FFFFFF;
+  --danger: #EF4444;
+  --warning: #F59E0B;
+  --success: #10B981;
+
+  /* Leaf Visual Identity Tokens (Light = Warm Peach & Cream) */
+  --leaf-primary: #FFCBA4;
+  --leaf-secondary: #FFE2CC;
+  --leaf-deep: #F4A261;
+  --leaf-hatched: #FFFFFF;
+  --leaf-stroke: #2F2F2F;
+  --leaf-accent: #E76F51;
+  --leaf-bg-contrast: #2F2F2F;
+
+  --radius: 1rem;
+}
+
+[data-theme="dark"],
+.dark {
+  --background: #16141C;
+  --foreground: #F3F0FA;
+  --card: #201D28;
+  --card-foreground: #F3F0FA;
+  --surface: #262231;
+  --border: #352E46;
+  --input: #352E46;
+  --primary: #8B5CF6;
+  --primary-foreground: #FFFFFF;
+  --secondary: #4C3A8A;
+  --secondary-foreground: #F3F0FA;
+  --muted: #252031;
+  --muted-foreground: #A197B8;
+  --accent: #A78BFA;
+  --accent-foreground: #FFFFFF;
+  --danger: #F87171;
+  --warning: #FBBF24;
+  --success: #34D399;
+
+  /* Leaf Visual Identity Tokens (Dark = Purple/Lavender/Violet) */
+  --leaf-primary: #7C5CBF;
+  --leaf-secondary: #A78BFA;
+  --leaf-deep: #4C3A8A;
+  --leaf-hatched: #2A233C;
+  --leaf-stroke: #CFC2F5;
+  --leaf-accent: #9333EA;
+  --leaf-bg-contrast: #0F0D15;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background-color 300ms ease, color 300ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Smooth transition for theme recoloring without breaking layout transitions */
+.theme-transition {
+  transition: background-color 300ms ease, border-color 300ms ease, color 300ms ease, fill 300ms ease, stroke 300ms ease;
+}
+
+/* Glass & Card styles */
+.orbit-card {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px -2px rgba(47, 47, 47, 0.05);
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 300ms ease, background-color 300ms ease;
+}
+
+.dark .orbit-card {
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.4);
+}
+
+.orbit-card:hover {
+  border-color: var(--primary);
+}
+
+/* Number Monospace Utility */
+.font-mono-num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
