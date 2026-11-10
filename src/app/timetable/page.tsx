@@ -11,6 +11,7 @@ import {
   X,
   Save,
   Check,
+  AlertCircle,
   Loader2,
 } from 'lucide-react';
 import { useAcademicData } from '@/hooks/useAcademicData';
@@ -32,7 +33,8 @@ export default function TimetablePage() {
   const [activeDay, setActiveDay] = useState(1); // 1 = Monday
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Form State
   const [subjectId, setSubjectId] = useState(subjects[0]?.id || '');
@@ -102,12 +104,16 @@ export default function TimetablePage() {
   };
 
   const handleSaveTimetable = async () => {
+    setSaveSuccess(null);
+    setSaveError(null);
     const res = await saveAllTimetable();
     if (res.success) {
-      setSaveFeedback(`All ${res.count} timetable slots saved to cloud!`);
-      setTimeout(() => setSaveFeedback(null), 4000);
+      setSaveSuccess(`All ${res.count} timetable slots saved to cloud successfully!`);
+      setTimeout(() => setSaveSuccess(null), 4000);
     } else {
-      setSaveFeedback('Error saving timetable. Slots remain safely cached locally.');
+      setSaveError(
+        `Cloud sync error: ${res.error || 'Failed to save'}. Your slots remain safely cached locally on this device.`
+      );
     }
   };
 
@@ -171,14 +177,27 @@ export default function TimetablePage() {
         </div>
       </div>
 
-      {/* Save Feedback Banner */}
-      {saveFeedback && (
+      {/* Save Success Banner */}
+      {saveSuccess && (
         <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4" />
-            <span>{saveFeedback}</span>
+            <span>{saveSuccess}</span>
           </div>
-          <button onClick={() => setSaveFeedback(null)} className="text-xs opacity-75 hover:opacity-100">
+          <button onClick={() => setSaveSuccess(null)} className="text-xs opacity-75 hover:opacity-100">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Save Error Banner */}
+      {saveError && (
+        <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{saveError}</span>
+          </div>
+          <button onClick={() => setSaveError(null)} className="text-xs opacity-75 hover:opacity-100">
             Dismiss
           </button>
         </div>

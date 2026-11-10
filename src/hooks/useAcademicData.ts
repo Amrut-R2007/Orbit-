@@ -51,6 +51,26 @@ const getLocal = <T>(key: string, fallback: T): T => {
   return fallback;
 };
 
+// Recursively strip undefined properties to ensure Firestore setDoc/updateDoc never fails
+export function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => cleanForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (value !== undefined) {
+        result[key] = cleanForFirestore(value);
+      }
+    }
+    return result as T;
+  }
+  return data;
+}
+
 export function useAcademicData() {
   const { user } = useAuth();
   const uid = user?.uid;
@@ -200,7 +220,7 @@ export function useAcademicData() {
 
       if (uid && isFirebaseConfigured) {
         try {
-          await setDoc(doc(db, 'users', uid, 'subjects', id), newSubject);
+          await setDoc(doc(db, 'users', uid, 'subjects', id), cleanForFirestore(newSubject));
         } catch (err) {
           console.error('Failed to write subject to Firestore:', err);
         }
@@ -221,7 +241,7 @@ export function useAcademicData() {
 
       if (uid && isFirebaseConfigured) {
         try {
-          await setDoc(doc(db, 'users', uid, 'subjects', id), updates, { merge: true });
+          await setDoc(doc(db, 'users', uid, 'subjects', id), cleanForFirestore(updates), { merge: true });
         } catch (err) {
           console.error('Failed to update subject in Firestore:', err);
         }
@@ -265,15 +285,16 @@ export function useAcademicData() {
       setIsSaving(true);
       try {
         const promises = toSave.map((s) =>
-          setDoc(doc(db, 'users', uid, 'subjects', s.id), s, { merge: true })
+          setDoc(doc(db, 'users', uid, 'subjects', s.id), cleanForFirestore(s), { merge: true })
         );
         await Promise.all(promises);
         setHasUnsavedChanges(false);
         setLastSaved(new Date());
         return { success: true, count: toSave.length };
-      } catch (err) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         console.error('Error saving subjects batch:', err);
-        return { success: false, count: 0, error: String(err) };
+        return { success: false, count: 0, error: message };
       } finally {
         setIsSaving(false);
       }
@@ -296,7 +317,7 @@ export function useAcademicData() {
 
       if (uid && isFirebaseConfigured) {
         try {
-          await setDoc(doc(db, 'users', uid, 'timetable', id), newSlot);
+          await setDoc(doc(db, 'users', uid, 'timetable', id), cleanForFirestore(newSlot));
         } catch (err) {
           console.error('Failed to write timetable slot to Firestore:', err);
         }
@@ -317,7 +338,7 @@ export function useAcademicData() {
 
       if (uid && isFirebaseConfigured) {
         try {
-          await setDoc(doc(db, 'users', uid, 'timetable', id), updates, { merge: true });
+          await setDoc(doc(db, 'users', uid, 'timetable', id), cleanForFirestore(updates), { merge: true });
         } catch (err) {
           console.error('Failed to update timetable slot:', err);
         }
@@ -369,7 +390,7 @@ export function useAcademicData() {
 
       if (uid && isFirebaseConfigured) {
         for (const slot of newSlots) {
-          await setDoc(doc(db, 'users', uid, 'timetable', slot.id), slot);
+          await setDoc(doc(db, 'users', uid, 'timetable', slot.id), cleanForFirestore(slot));
         }
       }
     },
@@ -390,15 +411,16 @@ export function useAcademicData() {
       setIsSaving(true);
       try {
         const promises = toSave.map((t) =>
-          setDoc(doc(db, 'users', uid, 'timetable', t.id), t, { merge: true })
+          setDoc(doc(db, 'users', uid, 'timetable', t.id), cleanForFirestore(t), { merge: true })
         );
         await Promise.all(promises);
         setHasUnsavedChanges(false);
         setLastSaved(new Date());
         return { success: true, count: toSave.length };
-      } catch (err) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         console.error('Error saving timetable batch:', err);
-        return { success: false, count: 0, error: String(err) };
+        return { success: false, count: 0, error: message };
       } finally {
         setIsSaving(false);
       }
@@ -442,7 +464,7 @@ export function useAcademicData() {
       });
 
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'attendance', recordId), newRecord);
+        await setDoc(doc(db, 'users', uid, 'attendance', recordId), cleanForFirestore(newRecord));
       }
     },
     [uid]
@@ -488,7 +510,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'tasks', id), newTask);
+        await setDoc(doc(db, 'users', uid, 'tasks', id), cleanForFirestore(newTask));
       }
     },
     [uid]
@@ -505,7 +527,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'tasks', id), { done: updatedDone }, { merge: true });
+        await setDoc(doc(db, 'users', uid, 'tasks', id), cleanForFirestore({ done: updatedDone }), { merge: true });
       }
     },
     [tasks, uid]
@@ -514,7 +536,7 @@ export function useAcademicData() {
   const deleteTask = useCallback(
     async (id: string) => {
       setTasks((prev) => {
-        const next = prev.filter((t) => t.id !== id);
+        const next = prev.filter((s) => s.id !== id);
         syncLocal('orbit_tasks', next);
         return next;
       });
@@ -536,7 +558,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'exams', id), newExam);
+        await setDoc(doc(db, 'users', uid, 'exams', id), cleanForFirestore(newExam));
       }
     },
     [uid]
@@ -567,7 +589,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'exams', examId), updatedExam, { merge: true });
+        await setDoc(doc(db, 'users', uid, 'exams', examId), cleanForFirestore(updatedExam), { merge: true });
       }
     },
     [exams, uid]
@@ -595,7 +617,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'exams', examId), updatedExam, { merge: true });
+        await setDoc(doc(db, 'users', uid, 'exams', examId), cleanForFirestore(updatedExam), { merge: true });
       }
     },
     [exams, uid]
@@ -626,7 +648,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'focusSessions', id), newSession);
+        await setDoc(doc(db, 'users', uid, 'focusSessions', id), cleanForFirestore(newSession));
       }
     },
     [uid]
@@ -643,7 +665,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'deadlines', id), newDl);
+        await setDoc(doc(db, 'users', uid, 'deadlines', id), cleanForFirestore(newDl));
       }
     },
     [uid]
@@ -657,7 +679,7 @@ export function useAcademicData() {
         return next;
       });
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'deadlines', id), { status }, { merge: true });
+        await setDoc(doc(db, 'users', uid, 'deadlines', id), cleanForFirestore({ status }), { merge: true });
       }
     },
     [uid]
@@ -684,7 +706,7 @@ export function useAcademicData() {
       setStreaks(merged);
       syncLocal('orbit_streaks', merged);
       if (uid && isFirebaseConfigured) {
-        await setDoc(doc(db, 'users', uid, 'streaks', 'current'), merged, { merge: true });
+        await setDoc(doc(db, 'users', uid, 'streaks', 'current'), cleanForFirestore(merged), { merge: true });
       }
     },
     [streaks, uid]

@@ -37,7 +37,8 @@ export default function SubjectsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [modalSaving, setModalSaving] = useState(false);
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Form State
   const [name, setName] = useState('');
@@ -80,48 +81,47 @@ export default function SubjectsPage() {
   };
 
   const handleSaveAll = async () => {
+    setSaveSuccess(null);
+    setSaveError(null);
     const res = await saveAllSubjects();
     if (res.success) {
-      setSaveFeedback(`All ${res.count} subjects saved to cloud successfully!`);
-      setTimeout(() => setSaveFeedback(null), 4000);
+      setSaveSuccess(`All ${res.count} subjects saved to cloud successfully!`);
+      setTimeout(() => setSaveSuccess(null), 4000);
     } else {
-      setSaveFeedback('Error saving subjects. Your changes remain cached locally.');
+      setSaveError(
+        `Cloud sync error: ${res.error || 'Failed to save'}. Your subjects remain safely saved locally on this device.`
+      );
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalSaving(true);
+    setSaveSuccess(null);
+    setSaveError(null);
     try {
+      const subjectPayload = {
+        name: name.trim(),
+        code: code.trim().toUpperCase(),
+        credits: Number(credits),
+        hasLab,
+        labCredits: hasLab ? Number(labCredits) : 0,
+        faculty: faculty.trim(),
+        color,
+        type: (hasLab ? 'theory+lab' : 'theory') as 'theory' | 'theory+lab',
+      };
+
       if (editingId) {
-        await updateSubject(editingId, {
-          name,
-          code,
-          credits: Number(credits),
-          hasLab,
-          labCredits: hasLab ? Number(labCredits) : undefined,
-          faculty,
-          color,
-          type: hasLab ? 'theory+lab' : 'theory',
-        });
+        await updateSubject(editingId, subjectPayload);
       } else {
-        await addSubject({
-          name,
-          code,
-          credits: Number(credits),
-          hasLab,
-          labCredits: hasLab ? Number(labCredits) : undefined,
-          faculty,
-          color,
-          type: hasLab ? 'theory+lab' : 'theory',
-        });
+        await addSubject(subjectPayload);
       }
       setModalOpen(false);
-      setSaveFeedback(`Subject "${name}" saved!`);
-      setTimeout(() => setSaveFeedback(null), 4000);
+      setSaveSuccess(`Subject "${name}" saved! Click "Save Changes" to sync with cloud.`);
+      setTimeout(() => setSaveSuccess(null), 4000);
     } catch (err) {
       console.error(err);
-      alert('Could not save subject. Please try again.');
+      setSaveError('Could not save subject. Your change was not added.');
     } finally {
       setModalSaving(false);
     }
@@ -181,21 +181,34 @@ export default function SubjectsPage() {
         </div>
       </div>
 
-      {/* Save Feedback Banner */}
-      {saveFeedback && (
+      {/* Success Feedback Banner */}
+      {saveSuccess && (
         <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4" />
-            <span>{saveFeedback}</span>
+            <span>{saveSuccess}</span>
           </div>
-          <button onClick={() => setSaveFeedback(null)} className="text-xs opacity-75 hover:opacity-100">
+          <button onClick={() => setSaveSuccess(null)} className="text-xs opacity-75 hover:opacity-100">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Error Feedback Banner */}
+      {saveError && (
+        <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{saveError}</span>
+          </div>
+          <button onClick={() => setSaveError(null)} className="text-xs opacity-75 hover:opacity-100">
             Dismiss
           </button>
         </div>
       )}
 
       {/* Pending Unsaved Changes Warning */}
-      {hasUnsavedChanges && !saveFeedback && (
+      {hasUnsavedChanges && !saveSuccess && !saveError && (
         <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-amber-500" />
