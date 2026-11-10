@@ -9,6 +9,9 @@ import {
   Trash2,
   Edit3,
   X,
+  Save,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { useAcademicData } from '@/hooks/useAcademicData';
 import { TimetableSlot } from '@/lib/types';
@@ -21,11 +24,15 @@ export default function TimetablePage() {
     updateTimetableSlot,
     deleteTimetableSlot,
     duplicateDaySlots,
+    saveAllTimetable,
+    isSaving,
+    hasUnsavedChanges,
   } = useAcademicData();
 
   const [activeDay, setActiveDay] = useState(1); // 1 = Monday
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   // Form State
   const [subjectId, setSubjectId] = useState(subjects[0]?.id || '');
@@ -94,6 +101,16 @@ export default function TimetablePage() {
     setModalOpen(false);
   };
 
+  const handleSaveTimetable = async () => {
+    const res = await saveAllTimetable();
+    if (res.success) {
+      setSaveFeedback(`All ${res.count} timetable slots saved to cloud!`);
+      setTimeout(() => setSaveFeedback(null), 4000);
+    } else {
+      setSaveFeedback('Error saving timetable. Slots remain safely cached locally.');
+    }
+  };
+
   const handleDuplicate = () => {
     duplicateDaySlots(activeDay, copyTargetDay);
     setCopyModalOpen(false);
@@ -111,7 +128,31 @@ export default function TimetablePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Explicit Save Timetable Button */}
+          <button
+            onClick={handleSaveTimetable}
+            disabled={isSaving}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold shadow-md transition-all active:scale-95 ${
+              hasUnsavedChanges
+                ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+            title="Explicitly save timetable slots to cloud database"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Timetable</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={() => setCopyModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)] text-xs font-bold text-[var(--foreground)] shadow-sm active:scale-95 transition-all"
@@ -129,6 +170,19 @@ export default function TimetablePage() {
           </button>
         </div>
       </div>
+
+      {/* Save Feedback Banner */}
+      {saveFeedback && (
+        <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>{saveFeedback}</span>
+          </div>
+          <button onClick={() => setSaveFeedback(null)} className="text-xs opacity-75 hover:opacity-100">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Weekday Selector Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 p-1 rounded-2xl bg-[var(--card)] border border-[var(--border)]">

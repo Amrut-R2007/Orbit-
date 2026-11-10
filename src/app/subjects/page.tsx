@@ -12,6 +12,8 @@ import {
   AlertCircle,
   X,
   Check,
+  Save,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useAcademicData } from '@/hooks/useAcademicData';
@@ -20,11 +22,22 @@ import { MonsteraLeaf } from '@/components/leaves/MonsteraLeaf';
 
 export default function SubjectsPage() {
   const { user } = useAuth();
-  const { subjects, addSubject, updateSubject, deleteSubject, getSubjectMetrics } =
-    useAcademicData();
+  const {
+    subjects,
+    addSubject,
+    updateSubject,
+    deleteSubject,
+    saveAllSubjects,
+    getSubjectMetrics,
+    isSaving,
+    hasUnsavedChanges,
+    lastSaved,
+  } = useAcademicData();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [modalSaving, setModalSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   // Form State
   const [name, setName] = useState('');
@@ -66,32 +79,52 @@ export default function SubjectsPage() {
     setModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingId) {
-      updateSubject(editingId, {
-        name,
-        code,
-        credits: Number(credits),
-        hasLab,
-        labCredits: hasLab ? Number(labCredits) : undefined,
-        faculty,
-        color,
-        type: hasLab ? 'theory+lab' : 'theory',
-      });
+  const handleSaveAll = async () => {
+    const res = await saveAllSubjects();
+    if (res.success) {
+      setSaveFeedback(`All ${res.count} subjects saved to cloud successfully!`);
+      setTimeout(() => setSaveFeedback(null), 4000);
     } else {
-      addSubject({
-        name,
-        code,
-        credits: Number(credits),
-        hasLab,
-        labCredits: hasLab ? Number(labCredits) : undefined,
-        faculty,
-        color,
-        type: hasLab ? 'theory+lab' : 'theory',
-      });
+      setSaveFeedback('Error saving subjects. Your changes remain cached locally.');
     }
-    setModalOpen(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setModalSaving(true);
+    try {
+      if (editingId) {
+        await updateSubject(editingId, {
+          name,
+          code,
+          credits: Number(credits),
+          hasLab,
+          labCredits: hasLab ? Number(labCredits) : undefined,
+          faculty,
+          color,
+          type: hasLab ? 'theory+lab' : 'theory',
+        });
+      } else {
+        await addSubject({
+          name,
+          code,
+          credits: Number(credits),
+          hasLab,
+          labCredits: hasLab ? Number(labCredits) : undefined,
+          faculty,
+          color,
+          type: hasLab ? 'theory+lab' : 'theory',
+        });
+      }
+      setModalOpen(false);
+      setSaveFeedback(`Subject "${name}" saved!`);
+      setTimeout(() => setSaveFeedback(null), 4000);
+    } catch (err) {
+      console.error(err);
+      alert('Could not save subject. Please try again.');
+    } finally {
+      setModalSaving(false);
+    }
   };
 
   return (
@@ -107,12 +140,36 @@ export default function SubjectsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Total Credits Pill */}
           <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[var(--primary)]/15 border border-[var(--primary)]/30 text-[var(--foreground)] text-xs font-bold shadow-sm">
             <Award className="w-4 h-4 text-[var(--primary)]" />
             <span>Total: <span className="font-mono-num">{totalSemesterCredits}</span> Credits</span>
           </div>
+
+          {/* Explicit Save to Cloud Button */}
+          <button
+            onClick={handleSaveAll}
+            disabled={isSaving}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 ${
+              hasUnsavedChanges
+                ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+            title="Explicitly save all subjects to your cloud database"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Saving to Cloud...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>{hasUnsavedChanges ? 'Save Changes' : 'Save to Cloud'}</span>
+              </>
+            )}
+          </button>
 
           <button
             onClick={openAddModal}
@@ -123,6 +180,36 @@ export default function SubjectsPage() {
           </button>
         </div>
       </div>
+
+      {/* Save Feedback Banner */}
+      {saveFeedback && (
+        <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>{saveFeedback}</span>
+          </div>
+          <button onClick={() => setSaveFeedback(null)} className="text-xs opacity-75 hover:opacity-100">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Pending Unsaved Changes Warning */}
+      {hasUnsavedChanges && !saveFeedback && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+            <span>You have unsaved changes. Click &quot;Save Changes&quot; to guarantee cloud persistence.</span>
+          </div>
+          <button
+            onClick={handleSaveAll}
+            disabled={isSaving}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-bold self-start sm:self-auto hover:bg-amber-600"
+          >
+            {isSaving ? 'Saving...' : 'Save Now'}
+          </button>
+        </div>
+      )}
 
       {/* Subject Cards Grid */}
       {subjects.length === 0 ? (
@@ -464,9 +551,11 @@ export default function SubjectsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold shadow-md hover:opacity-90"
+                    disabled={modalSaving}
+                    className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold shadow-md hover:opacity-90 disabled:opacity-50"
                   >
-                    {editingId ? 'Save Changes' : 'Create Subject'}
+                    {modalSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{modalSaving ? 'Saving...' : editingId ? 'Save Changes' : 'Save Subject'}</span>
                   </button>
                 </div>
               </form>

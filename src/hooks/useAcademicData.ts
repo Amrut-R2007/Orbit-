@@ -30,22 +30,48 @@ const DEFAULT_STREAK: StreakRecord = {
   badges: [],
 };
 
+// Safe localStorage sync helper
+const syncLocal = (key: string, data: unknown) => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+      console.warn('LocalStorage sync warning:', e);
+    }
+  }
+};
+
+const getLocal = <T>(key: string, fallback: T): T => {
+  if (typeof window !== 'undefined') {
+    try {
+      const val = localStorage.getItem(key);
+      if (val) return JSON.parse(val);
+    } catch {}
+  }
+  return fallback;
+};
+
 export function useAcademicData() {
   const { user } = useAuth();
   const uid = user?.uid;
 
-  // Real academic state (defaults to clean empty state)
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [timetable, setTimetable] = useState<TimetableSlot[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [deadlines, setDeadlines] = useState<Deadline[]>([]);
-  const [streaks, setStreaks] = useState<StreakRecord>(DEFAULT_STREAK);
-  const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
+  // Real academic state (initialized with localStorage cache so no data is ever lost)
+  const [subjects, setSubjects] = useState<Subject[]>(() => getLocal('orbit_subjects', []));
+  const [timetable, setTimetable] = useState<TimetableSlot[]>(() => getLocal('orbit_timetable', []));
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(() => getLocal('orbit_attendance', []));
+  const [exams, setExams] = useState<Exam[]>(() => getLocal('orbit_exams', []));
+  const [tasks, setTasks] = useState<Task[]>(() => getLocal('orbit_tasks', []));
+  const [deadlines, setDeadlines] = useState<Deadline[]>(() => getLocal('orbit_deadlines', []));
+  const [streaks, setStreaks] = useState<StreakRecord>(() => getLocal('orbit_streaks', DEFAULT_STREAK));
+  const [focusSessions, setFocusSessions] = useState<FocusSession[]>(() => getLocal('orbit_focus', []));
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Firestore real-time synchronization
+  // Manual save status tracking
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Firestore real-time synchronization with non-destructive merge
   useEffect(() => {
     if (!uid || !isFirebaseConfigured) {
       setIsLoaded(true);
@@ -55,7 +81,15 @@ export function useAcademicData() {
     const unsubSub = onSnapshot(
       collection(db, 'users', uid, 'subjects'),
       (snap) => {
-        setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject)));
+        const cloudList = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Subject));
+        setSubjects((prev) => {
+          // Merge cloud items with any local items that haven't arrived in the snapshot yet
+          const cloudIds = new Set(cloudList.map((c) => c.id));
+          const localPending = prev.filter((p) => !cloudIds.has(p.id));
+          const merged = [...cloudList, ...localPending];
+          syncLocal('orbit_subjects', merged);
+          return merged;
+        });
       },
       (err) => console.error('Subjects sync error:', err)
     );
@@ -63,7 +97,14 @@ export function useAcademicData() {
     const unsubTT = onSnapshot(
       collection(db, 'users', uid, 'timetable'),
       (snap) => {
-        setTimetable(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TimetableSlot)));
+        const cloudList = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TimetableSlot));
+        setTimetable((prev) => {
+          const cloudIds = new Set(cloudList.map((c) => c.id));
+          const localPending = prev.filter((p) => !cloudIds.has(p.id));
+          const merged = [...cloudList, ...localPending];
+          syncLocal('orbit_timetable', merged);
+          return merged;
+        });
       },
       (err) => console.error('Timetable sync error:', err)
     );
@@ -71,7 +112,9 @@ export function useAcademicData() {
     const unsubAtt = onSnapshot(
       collection(db, 'users', uid, 'attendance'),
       (snap) => {
-        setAttendance(snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord)));
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord));
+        setAttendance(list);
+        syncLocal('orbit_attendance', list);
       },
       (err) => console.error('Attendance sync error:', err)
     );
@@ -79,7 +122,9 @@ export function useAcademicData() {
     const unsubTasks = onSnapshot(
       collection(db, 'users', uid, 'tasks'),
       (snap) => {
-        setTasks(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Task)));
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Task));
+        setTasks(list);
+        syncLocal('orbit_tasks', list);
       },
       (err) => console.error('Tasks sync error:', err)
     );
@@ -87,7 +132,9 @@ export function useAcademicData() {
     const unsubExams = onSnapshot(
       collection(db, 'users', uid, 'exams'),
       (snap) => {
-        setExams(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Exam)));
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Exam));
+        setExams(list);
+        syncLocal('orbit_exams', list);
       },
       (err) => console.error('Exams sync error:', err)
     );
@@ -95,7 +142,9 @@ export function useAcademicData() {
     const unsubDeadlines = onSnapshot(
       collection(db, 'users', uid, 'deadlines'),
       (snap) => {
-        setDeadlines(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Deadline)));
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Deadline));
+        setDeadlines(list);
+        syncLocal('orbit_deadlines', list);
       },
       (err) => console.error('Deadlines sync error:', err)
     );
@@ -103,7 +152,9 @@ export function useAcademicData() {
     const unsubFocus = onSnapshot(
       collection(db, 'users', uid, 'focusSessions'),
       (snap) => {
-        setFocusSessions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FocusSession)));
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FocusSession));
+        setFocusSessions(list);
+        syncLocal('orbit_focus', list);
       },
       (err) => console.error('Focus sync error:', err)
     );
@@ -112,7 +163,9 @@ export function useAcademicData() {
       doc(db, 'users', uid, 'streaks', 'current'),
       (docSnap) => {
         if (docSnap.exists()) {
-          setStreaks(docSnap.data() as StreakRecord);
+          const st = docSnap.data() as StreakRecord;
+          setStreaks(st);
+          syncLocal('orbit_streaks', st);
         }
       },
       (err) => console.error('Streaks sync error:', err)
@@ -132,84 +185,228 @@ export function useAcademicData() {
     };
   }, [uid]);
 
-  // 1. Subjects Management
+  // 1. Subjects Management & Explicit Save
   const addSubject = useCallback(
     async (sub: Omit<Subject, 'id'>) => {
-      if (!uid) return;
-      const id = 'sub-' + Date.now();
+      const id = 'sub-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
       const newSubject: Subject = { ...sub, id };
-      setSubjects((prev) => [...prev, newSubject]);
-      await setDoc(doc(db, 'users', uid, 'subjects', id), newSubject);
+      
+      setSubjects((prev) => {
+        const next = [...prev, newSubject];
+        syncLocal('orbit_subjects', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        try {
+          await setDoc(doc(db, 'users', uid, 'subjects', id), newSubject);
+        } catch (err) {
+          console.error('Failed to write subject to Firestore:', err);
+        }
+      }
+      return newSubject;
     },
     [uid]
   );
 
   const updateSubject = useCallback(
     async (id: string, updates: Partial<Subject>) => {
-      if (!uid) return;
-      setSubjects((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
-      await setDoc(doc(db, 'users', uid, 'subjects', id), updates, { merge: true });
+      setSubjects((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...updates } : s));
+        syncLocal('orbit_subjects', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        try {
+          await setDoc(doc(db, 'users', uid, 'subjects', id), updates, { merge: true });
+        } catch (err) {
+          console.error('Failed to update subject in Firestore:', err);
+        }
+      }
     },
     [uid]
   );
 
   const deleteSubject = useCallback(
     async (id: string) => {
-      if (!uid) return;
-      setSubjects((prev) => prev.filter((s) => s.id !== id));
-      await deleteDoc(doc(db, 'users', uid, 'subjects', id));
+      setSubjects((prev) => {
+        const next = prev.filter((s) => s.id !== id);
+        syncLocal('orbit_subjects', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        try {
+          await deleteDoc(doc(db, 'users', uid, 'subjects', id));
+        } catch (err) {
+          console.error('Failed to delete subject from Firestore:', err);
+        }
+      }
     },
     [uid]
   );
 
-  // 2. Timetable Management
+  // Explicit Save All Subjects to Cloud
+  const saveAllSubjects = useCallback(
+    async (customList?: Subject[]) => {
+      const toSave = customList || subjects;
+      syncLocal('orbit_subjects', toSave);
+
+      if (!uid || !isFirebaseConfigured) {
+        setHasUnsavedChanges(false);
+        setLastSaved(new Date());
+        return { success: true, count: toSave.length };
+      }
+
+      setIsSaving(true);
+      try {
+        const promises = toSave.map((s) =>
+          setDoc(doc(db, 'users', uid, 'subjects', s.id), s, { merge: true })
+        );
+        await Promise.all(promises);
+        setHasUnsavedChanges(false);
+        setLastSaved(new Date());
+        return { success: true, count: toSave.length };
+      } catch (err) {
+        console.error('Error saving subjects batch:', err);
+        return { success: false, count: 0, error: String(err) };
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [subjects, uid]
+  );
+
+  // 2. Timetable Management & Explicit Save
   const addTimetableSlot = useCallback(
     async (slot: Omit<TimetableSlot, 'id'>) => {
-      if (!uid) return;
-      const id = 'tt-' + Date.now();
+      const id = 'tt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
       const newSlot: TimetableSlot = { ...slot, id };
-      setTimetable((prev) => [...prev, newSlot]);
-      await setDoc(doc(db, 'users', uid, 'timetable', id), newSlot);
+
+      setTimetable((prev) => {
+        const next = [...prev, newSlot];
+        syncLocal('orbit_timetable', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        try {
+          await setDoc(doc(db, 'users', uid, 'timetable', id), newSlot);
+        } catch (err) {
+          console.error('Failed to write timetable slot to Firestore:', err);
+        }
+      }
+      return newSlot;
     },
     [uid]
   );
 
   const updateTimetableSlot = useCallback(
     async (id: string, updates: Partial<TimetableSlot>) => {
-      if (!uid) return;
-      setTimetable((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
-      await setDoc(doc(db, 'users', uid, 'timetable', id), updates, { merge: true });
+      setTimetable((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...updates } : s));
+        syncLocal('orbit_timetable', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        try {
+          await setDoc(doc(db, 'users', uid, 'timetable', id), updates, { merge: true });
+        } catch (err) {
+          console.error('Failed to update timetable slot:', err);
+        }
+      }
     },
     [uid]
   );
 
   const deleteTimetableSlot = useCallback(
     async (id: string) => {
-      if (!uid) return;
-      setTimetable((prev) => prev.filter((s) => s.id !== id));
-      await deleteDoc(doc(db, 'users', uid, 'timetable', id));
+      setTimetable((prev) => {
+        const next = prev.filter((s) => s.id !== id);
+        syncLocal('orbit_timetable', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        try {
+          await deleteDoc(doc(db, 'users', uid, 'timetable', id));
+        } catch (err) {
+          console.error('Failed to delete timetable slot:', err);
+        }
+      }
     },
     [uid]
   );
 
   const duplicateDaySlots = useCallback(
     async (fromDay: number, toDay: number) => {
-      if (!uid) return;
       const sourceSlots = timetable.filter((s) => s.dayOfWeek === fromDay);
+      const newSlots: TimetableSlot[] = [];
       for (const [idx, s] of sourceSlots.entries()) {
-        const id = `tt-${toDay}-${Date.now()}-${idx}`;
+        const id = `tt-${toDay}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`;
         const cloned: TimetableSlot = {
           ...s,
           id,
           dayOfWeek: toDay,
         };
-        await setDoc(doc(db, 'users', uid, 'timetable', id), cloned);
+        newSlots.push(cloned);
+      }
+
+      setTimetable((prev) => {
+        const next = [...prev, ...newSlots];
+        syncLocal('orbit_timetable', next);
+        return next;
+      });
+      setHasUnsavedChanges(true);
+
+      if (uid && isFirebaseConfigured) {
+        for (const slot of newSlots) {
+          await setDoc(doc(db, 'users', uid, 'timetable', slot.id), slot);
+        }
       }
     },
     [timetable, uid]
   );
 
-  // 3. Attendance Marking (Autosaves to Firestore)
+  const saveAllTimetable = useCallback(
+    async (customList?: TimetableSlot[]) => {
+      const toSave = customList || timetable;
+      syncLocal('orbit_timetable', toSave);
+
+      if (!uid || !isFirebaseConfigured) {
+        setHasUnsavedChanges(false);
+        setLastSaved(new Date());
+        return { success: true, count: toSave.length };
+      }
+
+      setIsSaving(true);
+      try {
+        const promises = toSave.map((t) =>
+          setDoc(doc(db, 'users', uid, 'timetable', t.id), t, { merge: true })
+        );
+        await Promise.all(promises);
+        setHasUnsavedChanges(false);
+        setLastSaved(new Date());
+        return { success: true, count: toSave.length };
+      } catch (err) {
+        console.error('Error saving timetable batch:', err);
+        return { success: false, count: 0, error: String(err) };
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [timetable, uid]
+  );
+
+  // 3. Attendance Marking
   const markAttendance = useCallback(
     async (params: {
       date: string;
@@ -219,7 +416,6 @@ export function useAcademicData() {
       status: AttendanceStatus;
       note?: string;
     }) => {
-      if (!uid) return;
       const recordId = `${params.date}_${params.slotId || params.subjectId}_${params.kind}`;
       const newRecord: AttendanceRecord = {
         id: recordId,
@@ -234,20 +430,25 @@ export function useAcademicData() {
 
       setAttendance((prev) => {
         const existingIdx = prev.findIndex((a) => a.id === recordId);
+        let next: AttendanceRecord[];
         if (existingIdx >= 0) {
-          const next = [...prev];
+          next = [...prev];
           next[existingIdx] = newRecord;
-          return next;
+        } else {
+          next = [...prev, newRecord];
         }
-        return [...prev, newRecord];
+        syncLocal('orbit_attendance', next);
+        return next;
       });
 
-      await setDoc(doc(db, 'users', uid, 'attendance', recordId), newRecord);
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'attendance', recordId), newRecord);
+      }
     },
     [uid]
   );
 
-  // 4. Metrics & Attendance Calculations
+  // 4. Metrics & Calculations
   const getSubjectMetrics = useCallback(
     (subjectId: string, kind?: 'theory' | 'lab'): AttendanceMetrics => {
       const relevant = attendance.filter((a) => {
@@ -279,32 +480,47 @@ export function useAcademicData() {
   // 5. Tasks Management
   const addTask = useCallback(
     async (task: Omit<Task, 'id'>) => {
-      if (!uid) return;
       const id = 'task-' + Date.now();
       const newTask: Task = { ...task, id };
-      setTasks((prev) => [newTask, ...prev]);
-      await setDoc(doc(db, 'users', uid, 'tasks', id), newTask);
+      setTasks((prev) => {
+        const next = [newTask, ...prev];
+        syncLocal('orbit_tasks', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'tasks', id), newTask);
+      }
     },
     [uid]
   );
 
   const toggleTask = useCallback(
     async (id: string) => {
-      if (!uid) return;
       const target = tasks.find((t) => t.id === id);
       if (!target) return;
       const updatedDone = !target.done;
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: updatedDone } : t)));
-      await setDoc(doc(db, 'users', uid, 'tasks', id), { done: updatedDone }, { merge: true });
+      setTasks((prev) => {
+        const next = prev.map((t) => (t.id === id ? { ...t, done: updatedDone } : t));
+        syncLocal('orbit_tasks', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'tasks', id), { done: updatedDone }, { merge: true });
+      }
     },
     [tasks, uid]
   );
 
   const deleteTask = useCallback(
     async (id: string) => {
-      if (!uid) return;
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-      await deleteDoc(doc(db, 'users', uid, 'tasks', id));
+      setTasks((prev) => {
+        const next = prev.filter((t) => t.id !== id);
+        syncLocal('orbit_tasks', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await deleteDoc(doc(db, 'users', uid, 'tasks', id));
+      }
     },
     [uid]
   );
@@ -312,11 +528,16 @@ export function useAcademicData() {
   // 6. Exam Management
   const addExam = useCallback(
     async (exam: Omit<Exam, 'id'>) => {
-      if (!uid) return;
       const id = 'exam-' + Date.now();
       const newExam: Exam = { ...exam, id };
-      setExams((prev) => [...prev, newExam]);
-      await setDoc(doc(db, 'users', uid, 'exams', id), newExam);
+      setExams((prev) => {
+        const next = [...prev, newExam];
+        syncLocal('orbit_exams', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'exams', id), newExam);
+      }
     },
     [uid]
   );
@@ -332,7 +553,6 @@ export function useAcademicData() {
         expectedExam?: number;
       }
     ) => {
-      if (!uid) return;
       const currentExam = exams.find((e) => e.id === examId);
       if (!currentExam) return;
 
@@ -341,15 +561,20 @@ export function useAcademicData() {
       );
       const updatedExam = { ...currentExam, subjects: updatedSubjects };
 
-      setExams((prev) => prev.map((e) => (e.id === examId ? updatedExam : e)));
-      await setDoc(doc(db, 'users', uid, 'exams', examId), updatedExam, { merge: true });
+      setExams((prev) => {
+        const next = prev.map((e) => (e.id === examId ? updatedExam : e));
+        syncLocal('orbit_exams', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'exams', examId), updatedExam, { merge: true });
+      }
     },
     [exams, uid]
   );
 
   const toggleExamSyllabusItem = useCallback(
     async (examId: string, subjectId: string, syllabusId: string) => {
-      if (!uid) return;
       const currentExam = exams.find((e) => e.id === examId);
       if (!currentExam) return;
 
@@ -364,17 +589,28 @@ export function useAcademicData() {
       });
       const updatedExam = { ...currentExam, subjects: updatedSubjects };
 
-      setExams((prev) => prev.map((e) => (e.id === examId ? updatedExam : e)));
-      await setDoc(doc(db, 'users', uid, 'exams', examId), updatedExam, { merge: true });
+      setExams((prev) => {
+        const next = prev.map((e) => (e.id === examId ? updatedExam : e));
+        syncLocal('orbit_exams', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'exams', examId), updatedExam, { merge: true });
+      }
     },
     [exams, uid]
   );
 
   const deleteExam = useCallback(
     async (examId: string) => {
-      if (!uid) return;
-      setExams((prev) => prev.filter((e) => e.id !== examId));
-      await deleteDoc(doc(db, 'users', uid, 'exams', examId));
+      setExams((prev) => {
+        const next = prev.filter((e) => e.id !== examId);
+        syncLocal('orbit_exams', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await deleteDoc(doc(db, 'users', uid, 'exams', examId));
+      }
     },
     [uid]
   );
@@ -382,11 +618,16 @@ export function useAcademicData() {
   // 7. Focus Session Logger
   const logFocusSession = useCallback(
     async (session: Omit<FocusSession, 'id'>) => {
-      if (!uid) return;
       const id = 'fs-' + Date.now();
       const newSession: FocusSession = { ...session, id };
-      setFocusSessions((prev) => [newSession, ...prev]);
-      await setDoc(doc(db, 'users', uid, 'focusSessions', id), newSession);
+      setFocusSessions((prev) => {
+        const next = [newSession, ...prev];
+        syncLocal('orbit_focus', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'focusSessions', id), newSession);
+      }
     },
     [uid]
   );
@@ -394,29 +635,44 @@ export function useAcademicData() {
   // 8. Deadlines Management
   const addDeadline = useCallback(
     async (dl: Omit<Deadline, 'id'>) => {
-      if (!uid) return;
       const id = 'dl-' + Date.now();
       const newDl: Deadline = { ...dl, id };
-      setDeadlines((prev) => [...prev, newDl]);
-      await setDoc(doc(db, 'users', uid, 'deadlines', id), newDl);
+      setDeadlines((prev) => {
+        const next = [...prev, newDl];
+        syncLocal('orbit_deadlines', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'deadlines', id), newDl);
+      }
     },
     [uid]
   );
 
   const updateDeadlineStatus = useCallback(
     async (id: string, status: 'todo' | 'in_progress' | 'submitted') => {
-      if (!uid) return;
-      setDeadlines((prev) => prev.map((d) => (d.id === id ? { ...d, status } : d)));
-      await setDoc(doc(db, 'users', uid, 'deadlines', id), { status }, { merge: true });
+      setDeadlines((prev) => {
+        const next = prev.map((d) => (d.id === id ? { ...d, status } : d));
+        syncLocal('orbit_deadlines', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'deadlines', id), { status }, { merge: true });
+      }
     },
     [uid]
   );
 
   const deleteDeadline = useCallback(
     async (id: string) => {
-      if (!uid) return;
-      setDeadlines((prev) => prev.filter((d) => d.id !== id));
-      await deleteDoc(doc(db, 'users', uid, 'deadlines', id));
+      setDeadlines((prev) => {
+        const next = prev.filter((d) => d.id !== id);
+        syncLocal('orbit_deadlines', next);
+        return next;
+      });
+      if (uid && isFirebaseConfigured) {
+        await deleteDoc(doc(db, 'users', uid, 'deadlines', id));
+      }
     },
     [uid]
   );
@@ -424,10 +680,12 @@ export function useAcademicData() {
   // 9. Streaks Update
   const updateStreaks = useCallback(
     async (streakUpdates: Partial<StreakRecord>) => {
-      if (!uid) return;
       const merged = { ...streaks, ...streakUpdates };
       setStreaks(merged);
-      await setDoc(doc(db, 'users', uid, 'streaks', 'current'), merged, { merge: true });
+      syncLocal('orbit_streaks', merged);
+      if (uid && isFirebaseConfigured) {
+        await setDoc(doc(db, 'users', uid, 'streaks', 'current'), merged, { merge: true });
+      }
     },
     [streaks, uid]
   );
@@ -442,13 +700,18 @@ export function useAcademicData() {
     deadlines,
     streaks,
     focusSessions,
+    isSaving,
+    hasUnsavedChanges,
+    lastSaved,
     addSubject,
     updateSubject,
     deleteSubject,
+    saveAllSubjects,
     addTimetableSlot,
     updateTimetableSlot,
     deleteTimetableSlot,
     duplicateDaySlots,
+    saveAllTimetable,
     markAttendance,
     getSubjectMetrics,
     getOverallMetrics,

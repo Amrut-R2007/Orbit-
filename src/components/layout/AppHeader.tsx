@@ -13,7 +13,7 @@ import { Menu, X, Flame, Bell } from 'lucide-react';
 export const AppHeader: React.FC<{ title?: string }> = ({ title }) => {
   const pathname = usePathname();
   const { user } = useAuth();
-  const { streaks } = useAcademicData();
+  const { streaks, saveAllSubjects, isSaving, hasUnsavedChanges } = useAcademicData();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Active page title fallback
@@ -66,11 +66,24 @@ export const AppHeader: React.FC<{ title?: string }> = ({ title }) => {
           {/* Theme Switcher in header */}
           <ThemeToggle compact />
 
-          {/* Cloud Autosave Indicator */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--card)] border border-[var(--border)] text-[11px] font-semibold text-[var(--muted-foreground)] select-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Autosaved</span>
-          </div>
+          {/* Explicit Cloud Sync / Save Indicator Button */}
+          <button
+            onClick={() => saveAllSubjects()}
+            disabled={isSaving}
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-bold transition-all active:scale-95 ${
+              hasUnsavedChanges
+                ? 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 animate-pulse'
+                : 'bg-[var(--card)] border-[var(--border)] text-emerald-600 dark:text-emerald-400 hover:border-[var(--primary)]'
+            }`}
+            title="Click to save and synchronize all records to cloud database"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                hasUnsavedChanges ? 'bg-amber-500' : 'bg-emerald-500'
+              }`}
+            />
+            <span>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save Changes' : 'Synced'}</span>
+          </button>
 
           {/* User profile picture */}
           <Link
